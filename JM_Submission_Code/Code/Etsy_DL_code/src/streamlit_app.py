@@ -18,8 +18,8 @@ from utils import get_hash, STRUCTURED_FEATURES
 from data2 import get_transforms
 
 # Constants
-MODEL_PATH = "/Users/nevinselby/Documents/UWMadison/DataAnalystIntern/Project 2/model_True_True_True.json"
-EMBEDDINGS_FILE = '/Users/nevinselby/Documents/UWMadison/DataAnalystIntern/Project 2/nevin/joint_embedding_dict.json'
+MODEL_PATH = "model_True_True_True.json"
+EMBEDDINGS_FILE = 'nevin/joint_embedding_dict.json'
 SCALER_MEAN = 5.44
 SCALER_VAR = 0.86
 
