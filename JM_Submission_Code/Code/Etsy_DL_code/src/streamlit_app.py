@@ -203,7 +203,7 @@ def predict_days_to_sell(predicted_price, ols_features):
                 print("days_pred:", days_pred)
         
         # Apply reasonable bounds (keep predictions realistic)
-        days_pred = max(0.0, min(days_pred, 365.0))
+        days_pred = max(0.0, days_pred)
         
         return days_pred
         
