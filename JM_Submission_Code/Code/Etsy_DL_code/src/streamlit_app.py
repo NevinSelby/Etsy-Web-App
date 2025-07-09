@@ -2,7 +2,9 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import streamlit as st
-st.set_option('logger.level', 'error')
+import logging
+
+logging.getLogger('streamlit').setLevel(logging.ERROR)
 
 
 import streamlit as st
