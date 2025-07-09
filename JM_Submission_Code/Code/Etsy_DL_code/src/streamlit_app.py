@@ -14,7 +14,7 @@ import statsmodels.api as sm
 
 # Import from existing modules
 from model2 import Model
-from utils import get_hash, STRUCTURED_FEATURES
+from utils import get_hash, STRUCTURED_FEATURES, load_json, EMBEDDINGS_FILE_NAME
 from data2 import get_transforms
 
 # Constants
@@ -89,6 +89,11 @@ def load_models():
     except Exception as e:
         st.error(f"Error loading models: {str(e)}")
         return None, None, None, None, None
+
+# Load the compressed joint embedding dictionary at the top-level (or inside main if you prefer lazy loading)
+@st.cache_resource
+def load_embeddings():
+    return load_json(EMBEDDINGS_FILE_NAME)
 
 def get_joint_embedding(image, title, description, clip_model, clip_processor):
     """Generate joint CLIP embedding for image and text"""
@@ -183,8 +188,10 @@ def predict_days_to_sell(predicted_price, ols_features):
         for w in range(2, 16):
             features[f'week_{w}'] = 1 if week == w else 0
         
-        # OLS prediction: days to sell
+         # OLS prediction: days to sell
+
         days_pred = OLS_COEFFS['const']
+
         for var, coeff in OLS_COEFFS.items():
             print("Inside for loop")
             if var != 'const' and var in features:
@@ -193,7 +200,7 @@ def predict_days_to_sell(predicted_price, ols_features):
                 print("days_pred:", days_pred)
         
         # Apply reasonable bounds (keep predictions realistic)
-        days_pred = max(0, min(days_pred, 365))  # Between 1 day and 1 year
+        days_pred = max(0.0, min(days_pred, 365.0))
         
         return days_pred
         
@@ -231,7 +238,7 @@ def main():
     col1, col2, col3 = st.columns([1, 1, 1])
     
     with col1:
-        st.header("Image and Text Inputs")
+        st.header("Artwork Details")
         
         # Image upload
         uploaded_file = st.file_uploader(
@@ -259,12 +266,25 @@ def main():
         )
     
     with col2:
-        st.header("Artwork Features")
+        st.header("Shop & Artwork Features")
         
-        # Create input fields for structured features
-        feature_values = []
+        # Create input fields for structured features (custom display order)
+        material_features = ['materials_canvas', 'materials_oil', 'materials_acrylic']
         
-        for feature_name, (feature_desc, feature_type) in STRUCTURED_FEATURES.items():
+        # Define custom display order for better grouping
+        feature_order = [
+            'width_inches', 'height_inches', 'num_images',
+            'is_rare_find', 'is_only_one_available', 'is_handmade', 'framed',
+            'number_of_reviews', 'sales', 'admirers'
+        ]
+        
+        # Create a mapping for easy lookup and store values
+        feature_dict = dict(STRUCTURED_FEATURES.items())
+        feature_values_dict = {}
+        
+        for feature_name in feature_order:
+            feature_desc, feature_type = feature_dict[feature_name]
+            
             if feature_type == bool:
                 value = st.checkbox(feature_desc, key=feature_name)
             elif feature_type == int:
@@ -303,12 +323,17 @@ def main():
                         key=feature_name
                     )
             
-            feature_values.append(value)
+            feature_values_dict[feature_name] = value
+        
+        # Create feature_values list in the original STRUCTURED_FEATURES order
+        feature_values = []
+        for feature_name in STRUCTURED_FEATURES.keys():
+            if feature_name in material_features:
+                feature_values.append(False)  # Placeholder - will be overridden by radio button selection
+            else:
+                feature_values.append(feature_values_dict[feature_name])
     
     with col3:
-        st.header("Sales Prediction Inputs")
-                
-        # Only inputs that are NOT in STRUCTURED_FEATURES
         rating = st.slider(
             "Artist/Shop Rating (1-5 stars)",
             min_value=1.0,
@@ -318,17 +343,28 @@ def main():
             help="Average rating of the artist/shop"
         )
         
-        is_mixed_media = st.checkbox(
-            "Mixed Media Artwork",
-            value=False,
-            help="Check if this is a mixed media artwork"
+        # Medium selection (single choice)
+        st.subheader("Primary Medium")
+        medium_options = ["Canvas", "Oil", "Acrylic", "Mixed Media", "Other"]
+        selected_medium = st.radio(
+            "Select the primary medium of your artwork:",
+            options=medium_options,
+            index=0,
+            help="Choose the main medium used in your artwork. 'Other' includes all other mediums not listed."
         )
         
+        # Convert selection to individual flags
+        is_canvas = (selected_medium == "Canvas")
+        is_oil = (selected_medium == "Oil") 
+        is_acrylic = (selected_medium == "Acrylic")
+        is_mixed_media = (selected_medium == "Mixed Media")
+        is_other = (selected_medium == "Other")
+        
         prediction_week = st.selectbox(
-            "Prediction Week",
+            "Week since listing (1 = listing for the first time)",
             options=list(range(1, 16)),
             index=0,
-            help="Which week to predict for (affects seasonal trends)"
+            help="Week since listing: 1 if you are listing the artwork for the first time, 2 if it's been listed for 1 week, etc."
         )
     
     # Prediction button
@@ -361,8 +397,15 @@ def main():
                 if joint_embedding is None:
                     return
                 
+                # Override material features with radio button selection
+                feature_keys = list(STRUCTURED_FEATURES.keys())
+                updated_feature_values = feature_values.copy()
+                updated_feature_values[feature_keys.index('materials_canvas')] = is_canvas
+                updated_feature_values[feature_keys.index('materials_oil')] = is_oil
+                updated_feature_values[feature_keys.index('materials_acrylic')] = is_acrylic
+                
                 # Prepare structured features
-                structured_features = prepare_structured_features(feature_values)
+                structured_features = prepare_structured_features(updated_feature_values)
                 
                 if structured_features is None:
                     return
@@ -379,7 +422,6 @@ def main():
                     return
                 
                 # Prepare OLS features - reuse STRUCTURED_FEATURES where possible
-                feature_keys = list(STRUCTURED_FEATURES.keys())
                 ols_features = {
                     # New inputs not in STRUCTURED_FEATURES
                     'rating': rating,
@@ -387,15 +429,17 @@ def main():
                     'prediction_week': prediction_week,
                     
                     # Reuse from STRUCTURED_FEATURES
-                    'is_rare_find': feature_values[feature_keys.index('is_rare_find')],
-                    'review_count': feature_values[feature_keys.index('number_of_reviews')],
-                    'admirers': feature_values[feature_keys.index('admirers')],
-                    'width': feature_values[feature_keys.index('width_inches')],
-                    'height': feature_values[feature_keys.index('height_inches')],
-                    'surface_canvas': feature_values[feature_keys.index('materials_canvas')],
-                    'medium_oil': feature_values[feature_keys.index('materials_oil')],
-                    'medium_acrylic': feature_values[feature_keys.index('materials_acrylic')],
-                    'framed': feature_values[feature_keys.index('framed')],
+                    'is_rare_find': updated_feature_values[feature_keys.index('is_rare_find')],
+                    'review_count': updated_feature_values[feature_keys.index('number_of_reviews')],
+                    'admirers': updated_feature_values[feature_keys.index('admirers')],
+                    'width': updated_feature_values[feature_keys.index('width_inches')],
+                    'height': updated_feature_values[feature_keys.index('height_inches')],
+                    'framed': updated_feature_values[feature_keys.index('framed')],
+                    
+                    # Override material selection with radio button choice
+                    'surface_canvas': is_canvas,
+                    'medium_oil': is_oil,
+                    'medium_acrylic': is_acrylic,
                 }
                 
                 # Predict days to sell
