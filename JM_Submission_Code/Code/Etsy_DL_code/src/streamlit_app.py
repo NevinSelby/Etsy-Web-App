@@ -1,13 +1,5 @@
-import warnings
-warnings.filterwarnings("ignore")
-
 import streamlit as st
-import logging
 
-logging.getLogger('streamlit').setLevel(logging.ERROR)
-
-
-import streamlit as st
 import torch
 import numpy as np
 import pandas as pd
@@ -223,6 +215,12 @@ def main():
         page_icon="🎨",
         layout="wide"
     )
+
+    import warnings
+    import logging
+
+    warnings.filterwarnings("ignore")
+    logging.getLogger("streamlit").setLevel(logging.ERROR)
     
     st.title("🎨 Etsy Art Price & Sales Timeline Predictor")
     st.markdown("Upload an art image and provide details to get price estimates and predicted days until sale.")
